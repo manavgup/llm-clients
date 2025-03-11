@@ -1,0 +1,19 @@
+# Environment
+venv/
+.env
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Results and logs
+results/
+output/
+logs/
+*.log
+
+# Cache files
+.cache/
+.pytest_cache/
+
+# OS specific
+.DS_Store
