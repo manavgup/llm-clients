@@ -3,7 +3,7 @@ Enhanced Anthropic Claude client implementation.
 """
 import os
 import logging
-from typing import Dict, Optional, Generator, ClassVar, List, Any
+from typing import Dict, Optional, Generator, ClassVar, List, Any, Type
 from contextlib import asynccontextmanager
 
 import anthropic
@@ -335,3 +335,32 @@ class AnthropicClient(LLMClient[AnthropicConfig]):
         raise NotImplementedError(
             "Embeddings are not yet supported for Anthropic Claude"
         )
+    
+    # anthropic_client.py
+    def generate_structured(self, prompt: str,
+                        response_model: Type[BaseModel],
+                        params: Optional[GenerationParams] = None) -> BaseModel:
+        if params is None:
+            params = GenerationParams()
+        
+        # Create tool schema
+        tool = {
+            "name": "structured_response",
+            "input_schema": response_model.model_json_schema()
+        }
+        
+        # Call API with tool
+        response = self.client.messages.create(
+            model=self.model_id,
+            max_tokens=params.max_tokens,
+            temperature=params.temperature,
+            tools=[tool],
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        # Extract tool content
+        for content in response.content:
+            if content.type == "tool_use":
+                return response_model.model_validate(content.input)
+        
+        raise ValueError("No structured response found")

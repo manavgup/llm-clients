@@ -2,9 +2,10 @@
 Enhanced OpenAI client implementation with support for all model types.
 """
 import os
+import json
 import logging
-from typing import Dict, Optional, Generator, ClassVar, List, Any, Set, Union
-from pydantic import BaseModel, Field
+from typing import Dict, Optional, Generator, ClassVar, List, Any, Set, Union, Type
+from pydantic import BaseModel, Field, ValidationError
 
 from openai import OpenAI
 from .llm_client import LLMClient
@@ -513,4 +514,52 @@ class OpenAIClient(LLMClient[OpenAIConfig]):
             
         except Exception as e:
             logger.error(f"Error generating embeddings with OpenAI: {str(e)}")
+            raise
+    
+    def generate_structured(self, 
+                      prompt: str,
+                      response_model: Type[BaseModel],
+                      params: Optional[GenerationParams] = None) -> BaseModel:
+        if params is None:
+            params = GenerationParams()
+        
+        try:
+            # Get JSON schema and create system message
+            schema = response_model.model_json_schema()
+            system_content = (
+                f"Always respond with a valid JSON object that matches this exact schema:\n"
+                f"{json.dumps(schema, indent=2)}\n"
+                "Use proper JSON syntax with double quotes and correct data types."
+            )
+            
+            # Build messages with schema instructions
+            messages = [
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": prompt}
+            ]
+            
+            # Create API parameters
+            api_params = self._build_chat_api_params(messages, params)
+            api_params.update({
+                "response_format": {"type": "json_object"},
+            })
+            
+            # Remove deprecated parameters that might conflict
+            api_params.pop("functions", None)
+            api_params.pop("function_call", None)
+            api_params.pop("tools", None)
+            
+            # Call API
+            response = self.client.chat.completions.create(**api_params)
+            content = response.choices[0].message.content
+            
+            # Parse and validate
+            parsed = json.loads(content)
+            return response_model.model_validate(parsed)
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON response: {content}")
+            raise ValueError(f"Failed to parse JSON response: {e}") from e
+        except ValidationError as e:
+            logger.error(f"Schema validation failed: {e.errors()}")
             raise

@@ -2,9 +2,10 @@
 Enhanced IBM WatsonX client implementation with model-specific prompt formatting.
 """
 import os
+import json
 import logging
-from typing import Dict, Optional, Generator, ClassVar, Any, List
-from pydantic import BaseModel, Field
+from typing import Dict, Optional, Generator, ClassVar, Any, List, Type
+from pydantic import BaseModel, Field, ValidationError
 
 from ibm_watsonx_ai import APIClient, Credentials
 from ibm_watsonx_ai.foundation_models import ModelInference
@@ -452,6 +453,64 @@ class WatsonxClient(LLMClient[WatsonxConfig]):
         raise NotImplementedError(
             "Embeddings are not yet supported for IBM WatsonX"
         )
+    
+    def generate_structured(self, 
+                      prompt: str,
+                      response_model: Type[BaseModel],
+                      params: Optional[GenerationParams] = None) -> BaseModel:
+        """
+        Generate and validate structured responses from WatsonX.
+        
+        Args:
+            prompt: The text prompt to send to WatsonX
+            response_model: Pydantic model for response validation
+            params: Generation parameters
+            
+        Returns:
+            BaseModel: Validated response instance
+        """
+        if params is None:
+            params = GenerationParams()
+        
+        try:
+            # Get JSON schema and create instruction
+            schema = response_model.model_json_schema()
+            schema_str = json.dumps(schema, indent=2)
+            
+            # Enhance prompt with formatting instructions
+            structured_prompt = (
+                f"{prompt}\n\n"
+                "Respond with a JSON object matching this schema:\n"
+                f"{schema_str}\n"
+                "Use proper JSON syntax with double quotes."
+            )
+            
+            # Format using the client's formatter
+            formatted_prompt = self.formatter.format_prompt(
+                structured_prompt,
+                self.config.default_system_prompt
+            )
+            
+            # Convert parameters to WatsonX format
+            watson_params = self._convert_params_to_watson_format(params)
+            
+            # Get or create model
+            model = self._get_model(watson_params)
+            
+            # Generate response
+            response = model.generate_text(prompt=formatted_prompt)
+            content = self._process_response(response)
+            
+            # Parse and validate
+            parsed = json.loads(content)
+            return response_model.model_validate(parsed)
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON response: {content}")
+            raise ValueError("WatsonX returned invalid JSON") from e
+        except ValidationError as e:
+            logger.error(f"Schema validation failed: {e.errors()}")
+            raise
     
     def close(self) -> None:
         """Close the persistent connection if open."""

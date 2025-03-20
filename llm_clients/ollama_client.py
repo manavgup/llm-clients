@@ -5,7 +5,7 @@ import os
 import json
 import logging
 import requests
-from typing import Dict, Optional, Generator, ClassVar, Any, List, Union
+from typing import Dict, Optional, Generator, ClassVar, Any, List, Union, Type
 from pydantic import BaseModel, Field
 
 from .llm_client import LLMClient
@@ -528,3 +528,26 @@ class OllamaClient(LLMClient[OllamaConfig]):
         except Exception as e:
             logger.error(f"Error generating embeddings with Ollama: {str(e)}")
             raise
+    
+    def generate_structured(self, prompt: str, 
+                        response_model: Type[BaseModel],
+                        params: Optional[GenerationParams] = None) -> BaseModel:
+        if params is None:
+            params = GenerationParams()
+        
+        # Format prompt
+        formatted_prompt = self.formatter.format_prompt(prompt) if self.config.use_formatter else prompt
+        
+        # Prepare request with JSON schema
+        data = self._prepare_request_data(formatted_prompt, params, stream=False)
+        data["format"] = response_model.model_json_schema()
+        
+        # Make request
+        response = requests.post(
+            f"{self.config.base_url}/api/generate",
+            json=data,
+            timeout=self.config.request_timeout
+        )
+        response.raise_for_status()
+        
+        return response_model.model_validate_json(response.json()["response"])

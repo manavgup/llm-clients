@@ -3,9 +3,9 @@ Base LLM client definition with improved abstractions.
 """
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Generator, Optional, ClassVar, List, Any, TypeVar, Generic, cast
+from typing import Dict, Generator, Optional, ClassVar, List, Any, TypeVar, Generic, cast, Type
 
-from pydantic import ValidationError
+from pydantic import ValidationError, BaseModel
 
 from .interfaces import ProviderType, ModelInfo, GenerationParams, Message
 
@@ -160,6 +160,14 @@ class LLMClient(ABC, Generic[T]):
         # Subclasses should override this for chat-specific implementations
         prompt = self._messages_to_prompt(messages)
         return self.generate(prompt, params)
+    
+    @abstractmethod
+    def generate_structured(self, 
+                          prompt: str, 
+                          response_model: Type[BaseModel],
+                          params: Optional[GenerationParams] = None) -> BaseModel:
+        """Generate and parse structured response using Pydantic model"""
+        pass
     
     def _messages_to_prompt(self, messages: List[Message]) -> str:
         """
