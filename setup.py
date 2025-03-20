@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="llm-clients",
+    name="llm_clients",
     version="0.1.0",
     description="Standardized clients for various LLM providers",
     author="Manav Gupta",
